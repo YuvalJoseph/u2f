@@ -18,7 +18,10 @@ var trustedFacets = []string{appID}
 // Normally these state variables would be stored in a database.
 // For the purposes of the demo, we just store them in memory.
 var challenge *u2f.Challenge
-var registration []byte
+
+//Yuval
+//var registration []byte
+var registration []u2f.Registration
 var counter uint32
 
 func registerRequest(w http.ResponseWriter, r *http.Request) {
@@ -53,16 +56,18 @@ func registerResponse(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "error verifying response", http.StatusInternalServerError)
 		return
 	}
-	buf, err := reg.MarshalBinary()
-	if err != nil {
-		log.Printf("reg.MarshalBinary error: %v", err)
-		http.Error(w, "error", http.StatusInternalServerError)
-		return
-	}
-	registration = buf
+	// buf, err := reg.MarshalBinary()
+	// if err != nil {
+	// 	log.Printf("reg.MarshalBinary error: %v", err)
+	// 	http.Error(w, "error", http.StatusInternalServerError)
+	// 	return
+	// }
+	//Yuval
+	//registration = buf
+	registration = append(registration, *reg)
 	counter = 0
 
-	log.Printf("Registration success: %+v", registration)
+	log.Printf("Registration success: %+v", reg)
 	w.Write([]byte("success"))
 }
 
@@ -80,17 +85,17 @@ func signRequest(w http.ResponseWriter, r *http.Request) {
 	}
 	challenge = c
 
-	var reg u2f.Registration
-	if err := reg.UnmarshalBinary(registration); err != nil {
-		log.Printf("reg.UnmarshalBinary error: %v", err)
-		http.Error(w, "error", http.StatusInternalServerError)
-		return
-	}
-	var req u2f.AuthenticateRequest
-	req.Type = "u2f_sign_request"
-	req.SignRequests = append(req.SignRequests, *c.SignRequest(reg))
+	//reg := registration
+	//yuval
+	//var reg u2f.Registration
+	// if err := reg.UnmarshalBinary(registration); err != nil {
+	// 	log.Printf("reg.UnmarshalBinary error: %v", err)
+	// 	http.Error(w, "error", http.StatusInternalServerError)
+	// 	return
+	// }
+	req := *c.SignRequest(registration)
 
-	log.Printf("signRequest: %+v", req)
+	log.Printf("authenitcateRequest: %+v", req)
 	json.NewEncoder(w).Encode(req)
 }
 
@@ -112,23 +117,19 @@ func signResponse(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var reg u2f.Registration
-	if err := reg.UnmarshalBinary(registration); err != nil {
-		log.Printf("reg.UnmarshalBinary error: %v", err)
-		http.Error(w, "error", http.StatusInternalServerError)
-		return
+	var err error
+	for _, reg := range registration {
+		newCounter, err := reg.Authenticate(signResp, *challenge, counter)
+		if err == nil {
+			log.Printf("newCounter: %d", newCounter)
+			counter = newCounter
+			w.Write([]byte("success"))
+			return
+		}
 	}
 
-	newCounter, err := reg.Authenticate(signResp, *challenge, counter)
-	if err != nil {
-		log.Printf("VerifySignResponse error: %v", err)
-		http.Error(w, "error verifying response", http.StatusInternalServerError)
-		return
-	}
-	log.Printf("newCounter: %d", newCounter)
-	counter = newCounter
-
-	w.Write([]byte("success"))
+	log.Printf("VerifySignResponse error: %v", err)
+	http.Error(w, "error verifying response", http.StatusInternalServerError)
 }
 
 const indexHTML = `
